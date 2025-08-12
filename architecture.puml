@@ -1,0 +1,105 @@
+@startuml
+title Arquitectura Microservicios E-commerce ADA - Carlos Andres Marulanda Rojas
+
+left to right direction
+skinparam componentStyle rectangle
+
+actor "Usuarios Externos" as UE
+
+package "Plataforma y componentes transversales" as Plataforma {
+  component "API Gateway" as APIGW
+  component "Auth Service\n(OAuth 2.0 / OIDC)" as Auth
+  package "Observabilidad" {
+    component "Prometheus" as Prom
+    component "Grafana" as Graf
+    component "Elastic Stack" as Elastic
+    component "Jaeger" as Jaeger
+  }
+  package "Compliance" {
+    component "PCI DSS" as PCI
+    component "GDPR" as GDPR
+    component "CCPA" as CCPA
+  }
+  component "Saga Orchestrator\n(Temporal.io)" as PlatformSaga
+  component "Broker de Mensajes\n(Kafka)" as Broker
+  component "Infraestructura\n(Kubernetes - EKS)" as Infra
+  component "IaC\n(Infra as Code)" as IaC
+}
+
+package "Microservicios de Dominio" {
+  package "Product Service" {
+    component "Product API\n(API REST / gRPC)" as ProdAPI
+    database "Product DB\n(PostgreSQL)" as ProdDB
+    component "Product Event Publisher" as ProdPub
+  }
+
+  package "User Service" {
+    component "User API\n(API REST / gRPC)" as UserAPI
+    database "User DB\n(PostgreSQL)" as UserDB
+    component "User Event Publisher" as UserPub
+  }
+
+  package "Order Service" {
+    component "Order API\n(API REST / gRPC)" as OrderAPI
+    database "Order DB\n(PostgreSQL)" as OrderDB
+    component "Order Event Publisher" as OrderPub
+    component "Saga Orchestrator\n(Interno de orden)" as OrderSaga
+  }
+}
+
+UE --> APIGW : "Solicitudes externas"
+APIGW --> Auth : "Validación OAuth / OIDC"
+APIGW --> ProdAPI
+APIGW --> UserAPI
+APIGW --> OrderAPI
+
+OrderAPI --> ProdAPI : "Validar inventario\n(REST / gRPC)"
+OrderAPI --> UserAPI : "Validar usuario\n(REST / gRPC)"
+
+ProdPub --> Broker : "Eventos de producto"
+UserPub --> Broker : "Eventos de usuario"
+OrderPub --> Broker : "Eventos de orden"
+
+Broker --> OrderAPI : "Consumo eventos\n(Saga / Eventos)"
+Broker --> ProdAPI : "Consumo eventos"
+Broker --> UserAPI : "Consumo eventos"
+
+PlatformSaga --> ProdAPI : "Paso Saga\n(compensación)"
+PlatformSaga --> UserAPI : "Paso Saga\n(compensación)"
+
+OrderSaga --> ProdAPI : "Paso Saga (orden)\n(compensación)"
+OrderSaga --> UserAPI : "Paso Saga (orden)\n(compensación)"
+
+ProdAPI -- ProdDB
+UserAPI -- UserDB
+OrderAPI -- OrderDB
+
+ProdAPI --> Prom : "Métricas"
+UserAPI --> Prom : "Métricas"
+OrderAPI --> Prom : "Métricas"
+
+Prom --> Graf : "Dashboards / Alertas"
+
+ProdAPI --> Elastic : "Logs"
+UserAPI --> Elastic : "Logs"
+OrderAPI --> Elastic : "Logs"
+
+ProdAPI --> Jaeger : "Trazas"
+UserAPI --> Jaeger : "Trazas"
+OrderAPI --> Jaeger : "Trazas"
+
+APIGW --> Infra : "Entrada / Enrutamiento"
+Infra --> IaC : "Aprovisionamiento / Templates"
+
+Infra --> ProdAPI : "Despliegue"
+Infra --> UserAPI : "Despliegue"
+Infra --> OrderAPI : "Despliegue"
+
+APIGW --> PCI : "Auditoría de acceso"
+OrderAPI --> PCI : "Auditoría de pagos"
+UserAPI --> GDPR : "Auditoría de datos personales"
+
+Broker ..> PlatformSaga : "Integración con orquestador (opcional)"
+Broker ..> OrderSaga : "Eventos para orquestación local"
+
+@enduml
